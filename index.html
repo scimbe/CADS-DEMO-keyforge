@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Keyforge — sign &amp; verify CADS manifests in your browser</title>
+<style>
+  :root {
+    --bg:#0c111d; --panel:#141b2c; --panel2:#1a2338; --line:#2a3450; --line-soft:#212a41;
+    --text:#eef1f7; --muted:#8a93ad; --muted2:#c3c9db;
+    --accent:#d98a4f; --accent-soft:#a8683a; --accent2:#5fb8ab;
+    --ok:#5fb8ab; --bad:#e0716b;
+    --font-body: system-ui,-apple-system,"Segoe UI",sans-serif;
+    --font-head: ui-serif,Georgia,"Iowan Old Style","Palatino Linotype",serif;
+    --font-mono: ui-monospace,SFMono-Regular,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg:#f5f7fb; --panel:#ffffff; --panel2:#eef1f8; --line:#d7deec; --line-soft:#e3e8f3;
+      --text:#131a2c; --muted:#5b6478; --muted2:#333d54;
+      --accent:#b8672f; --accent-soft:#8f4f24; --accent2:#2f8a7d;
+    }
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; }
+  body {
+    background:var(--bg); color:var(--text); font-family:var(--font-body);
+    line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  a { color:var(--accent2); }
+  h1,h2,h3 { font-family:var(--font-head); font-weight:600; letter-spacing:-0.01em; margin:0 0 .4em; }
+  h1 { font-size:2.2rem; }
+  h2 { font-size:1.4rem; margin-top:0; }
+  h3 { font-size:1.05rem; color:var(--muted2); }
+  .eyebrow {
+    font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.08em;
+    font-size:.72rem; color:var(--accent2);
+  }
+  .wrap { max-width:920px; margin:0 auto; padding:2.5rem 1.25rem 4rem; }
+  header.hero { padding-bottom:1.5rem; border-bottom:1px solid var(--line); margin-bottom:2rem; }
+  .badge {
+    display:inline-block; font-family:var(--font-mono); font-size:.72rem;
+    color:var(--muted); border:1px solid var(--line); border-radius:999px;
+    padding:.25em .8em; margin-bottom:1rem;
+  }
+  .badge a { color:var(--muted); text-decoration:none; }
+  .badge a:hover { color:var(--accent2); }
+  p.lede { color:var(--muted2); font-size:1.05rem; max-width:60ch; }
+  section.card {
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:1.5rem 1.5rem 1.75rem; margin-bottom:1.5rem;
+  }
+  section.card > .eyebrow { display:block; margin-bottom:.3rem; }
+  .row { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; margin:.75rem 0; }
+  button.btn {
+    font-family:var(--font-body); font-size:.92rem; font-weight:600; cursor:pointer;
+    background:var(--accent); color:#1a1206; border:none; border-radius:6px;
+    padding:.55em 1.1em; transition:filter .15s ease;
+  }
+  button.btn:hover { filter:brightness(1.08); }
+  button.btn:disabled { opacity:.5; cursor:not-allowed; filter:none; }
+  button.btn.secondary {
+    background:transparent; color:var(--text); border:1px solid var(--line);
+  }
+  button.btn.secondary:hover { border-color:var(--accent2); color:var(--accent2); }
+  label { display:block; font-size:.82rem; color:var(--muted); margin:.9rem 0 .3rem; }
+  textarea, input[type=text] {
+    width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:.6em .7em; font-family:var(--font-mono); font-size:.82rem;
+    resize:vertical;
+  }
+  textarea { min-height:9rem; }
+  .kv { font-family:var(--font-mono); font-size:.8rem; word-break:break-all; }
+  .field {
+    background:var(--panel2); border:1px solid var(--line-soft); border-radius:8px;
+    padding:.6em .8em; margin:.4rem 0;
+  }
+  .field .label { font-size:.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:.2em; }
+  .field .value { font-family:var(--font-mono); font-size:.82rem; word-break:break-all; }
+  .copy-btn {
+    font-family:var(--font-mono); font-size:.7rem; color:var(--muted); background:none;
+    border:1px solid var(--line); border-radius:5px; padding:.15em .5em; cursor:pointer; margin-left:.5em;
+  }
+  .copy-btn:hover { color:var(--accent2); border-color:var(--accent2); }
+  .warn {
+    border:1px solid var(--accent-soft); background:color-mix(in srgb, var(--accent) 12%, var(--panel2));
+    border-radius:8px; padding:.7em 1em; font-size:.85rem; color:var(--muted2); margin:.75rem 0;
+  }
+  .status { font-family:var(--font-mono); font-size:.85rem; padding:.5em .9em; border-radius:6px; margin:.6rem 0; }
+  .status.pending { color:var(--muted); background:var(--panel2); border:1px solid var(--line); }
+  .status.ok { color:var(--ok); background:color-mix(in srgb, var(--ok) 12%, var(--panel2)); border:1px solid var(--ok); }
+  .status.bad { color:var(--bad); background:color-mix(in srgb, var(--bad) 12%, var(--panel2)); border:1px solid var(--bad); }
+  select {
+    background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px;
+    padding:.4em .6em; font-family:var(--font-body); font-size:.85rem;
+  }
+  pre.json {
+    background:var(--panel2); border:1px solid var(--line-soft); border-radius:8px;
+    padding:.9em 1em; font-family:var(--font-mono); font-size:.78rem; overflow-x:auto;
+    max-height:22rem; white-space:pre-wrap; word-break:break-word;
+  }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+  @media (max-width:640px) { .grid2 { grid-template-columns:1fr; } }
+  footer {
+    border-top:1px solid var(--line); margin-top:2.5rem; padding-top:1.75rem;
+    color:var(--muted); font-size:.85rem;
+  }
+  footer .support {
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:1.3rem 1.5rem; margin-bottom:1.5rem;
+  }
+  footer .support p { color:var(--muted2); margin:.3em 0 .8em; }
+  footer .support .links a { margin-right:1.25em; font-size:.85rem; }
+  footer .legal a { color:var(--muted); margin-right:1em; text-decoration:none; }
+  footer .legal a:hover { color:var(--accent2); }
+  .small { font-size:.78rem; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <span class="badge">part of <a href="https://bunsenbrenner.org" target="_blank" rel="noopener">bunsenbrenner.org</a> — CADS zero-trust tunnel demos</span>
+    <h1>Keyforge</h1>
+    <p class="lede">
+      Generate an ed25519 holder identity, and sign or verify a real
+      <a href="https://github.com/scimbe/CADS-agent-marketplace" target="_blank" rel="noopener">CADS-agent-marketplace</a>
+      <code>ServiceManifest</code> — entirely in your browser, in WebAssembly. Your private key is
+      generated on this page and never sent anywhere.
+    </p>
+  </header>
+
+  <section class="card">
+    <span class="eyebrow">Step 1</span>
+    <h2>Your holder identity</h2>
+    <p class="small">
+      Generated with <code>ct-agent-wasm</code>'s <code>generate_holder_identity()</code> — the same
+      production-proven ed25519 keypair generator a real ct-agent uses for its channel identity.
+    </p>
+    <div class="row">
+      <button class="btn" id="gen-identity">Generate a new identity</button>
+      <span id="identity-status" class="small"></span>
+    </div>
+    <div id="identity-fields" style="display:none">
+      <div class="field">
+        <div class="label">Public key (hex) <button class="copy-btn" data-copy="#pubkey-val">copy</button></div>
+        <div class="value" id="pubkey-val"></div>
+      </div>
+      <div class="field">
+        <div class="label">Private key (hex) — held only in this tab's memory <button class="copy-btn" data-copy="#privkey-val">copy</button></div>
+        <div class="value" id="privkey-val"></div>
+      </div>
+    </div>
+    <div class="warn">
+      The private key never leaves this page: it is generated by WebAssembly running locally and used
+      only for the local <code>signManifest</code>/<code>holderSign</code> calls below. Nothing here
+      makes a network request that includes it. Reload the page and it is gone — this is a demo
+      identity, not a place to keep a real one.
+    </div>
+  </section>
+
+  <section class="card">
+    <span class="eyebrow">Step 2</span>
+    <h2>Verify a real manifest</h2>
+    <p class="small">
+      Fetches a live, publisher-signed manifest from
+      <code>registry.bunsenbrenner.org</code> and checks its ed25519 signature — entirely client-side,
+      via <code>manifest-core-wasm</code> calling <code>ServiceManifest::is_valid</code> directly (no
+      preimage logic reimplemented in JS).
+    </p>
+    <div class="row">
+      <button class="btn" id="fetch-registry">Fetch live from registry</button>
+      <select id="manifest-picker" style="display:none"></select>
+    </div>
+    <div id="registry-note" class="warn" style="display:none"></div>
+    <label for="verify-input">Manifest JSON (fetched automatically above, or paste your own)</label>
+    <textarea id="verify-input" spellcheck="false" placeholder="Paste a signed ServiceManifest JSON here, or fetch one above…"></textarea>
+    <div class="row">
+      <button class="btn secondary" id="verify-manifest">Verify signature</button>
+    </div>
+    <div id="verify-status"></div>
+  </section>
+
+  <section class="card">
+    <span class="eyebrow">Step 3</span>
+    <h2>Sign your own manifest</h2>
+    <p class="small">
+      Edit the template below (or generate a fresh one), then sign it with your holder identity from
+      Step 1 via <code>manifest-core-wasm</code>'s <code>signManifest</code> — this calls
+      <code>ServiceManifest::sign_new</code> directly, so <code>publisher_pubkey</code> is always
+      derived from your own key.
+    </p>
+    <div class="row">
+      <button class="btn secondary" id="new-template">New random template</button>
+    </div>
+    <label for="sign-input">Unsigned manifest JSON</label>
+    <textarea id="sign-input" spellcheck="false"></textarea>
+    <div class="row">
+      <button class="btn" id="sign-manifest">Sign with my identity</button>
+    </div>
+    <div id="sign-status"></div>
+    <div id="signed-output" style="display:none">
+      <label>Signed manifest JSON</label>
+      <pre class="json" id="signed-json"></pre>
+      <div class="row">
+        <button class="btn secondary" id="verify-signed">Verify this signature</button>
+      </div>
+      <div id="signed-verify-status"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <span class="eyebrow">Bonus — the new part</span>
+    <h2>Raw holder sign / verify</h2>
+    <p class="small">
+      <code>ct-agent-wasm</code> already exposed <code>holderSign</code> (sign arbitrary bytes with your
+      holder private key). It had no client-side way to check a signature — this demo's groundwork PR
+      added <code>holderVerify</code>, mirroring <code>holderSign</code>'s own pattern. Try it directly,
+      on any message you like.
+    </p>
+    <label for="raw-message">Message to sign</label>
+    <input type="text" id="raw-message" value="keyforge says hello" />
+    <div class="row">
+      <button class="btn secondary" id="raw-sign">holderSign</button>
+      <button class="btn secondary" id="raw-verify">holderVerify</button>
+    </div>
+    <div class="grid2">
+      <div class="field">
+        <div class="label">Signature (hex)</div>
+        <div class="value" id="raw-sig-val">—</div>
+      </div>
+      <div id="raw-verify-status"></div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="support">
+      <h3>Keep the lab running.</h3>
+      <p>Bunsenbrenner is free to use and runs on donated time and server costs. If it helped you get something live, a small contribution keeps it going.</p>
+      <div class="links">
+        <a href="https://steady.page/plans/77a32d9c-c399-4ca1-9515-7a628c7a9413" target="_blank" rel="noopener">Support as a member →</a>
+        <a href="https://buymeacoffee.com/bunsenbrenner" target="_blank" rel="noopener">Buy me a coffee →</a>
+        <a href="https://github.com/scimbe/CADS-Tunnel" target="_blank" rel="noopener">GitHub — feature requests, code review, issues →</a>
+      </div>
+    </div>
+    <div class="legal">
+      <a href="https://bunsenbrenner.org/legal-notice" target="_blank" rel="noopener">Legal notice</a>
+      <a href="https://bunsenbrenner.org/privacy-policy" target="_blank" rel="noopener">Privacy policy</a>
+      <a href="https://bunsenbrenner.org/terms-of-use" target="_blank" rel="noopener">Terms of use</a>
+    </div>
+    <p>© Bunsenbrenner.org — Martin Becke &nbsp;·&nbsp; <a href="https://github.com/scimbe/CADS-DEMO-keyforge" target="_blank" rel="noopener">source</a></p>
+  </footer>
+
+</div>
+
+<script type="module">
+import initCtAgent, {
+  generate_holder_identity, holderSign, holderVerify,
+} from './pkg/ct-agent-wasm/ct_agent_wasm.js';
+import initManifestCore, {
+  signManifest, verifyManifest, isManifestValid,
+} from './pkg/manifest-core-wasm/manifest_core_wasm.js';
+
+const $ = (sel) => document.querySelector(sel);
+
+function hex(bytes) {
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+function randomHex32() {
+  const b = new Uint8Array(32);
+  crypto.getRandomValues(b);
+  return hex(b);
+}
+function setStatus(el, kind, text) {
+  el.innerHTML = `<div class="status ${kind}">${text}</div>`;
+}
+
+let identity = null; // { public_hex, private_hex }
+
+function newTemplate() {
+  const now = Math.floor(Date.now() / 1000);
+  const tpl = {
+    manifest_id: randomHex32(),
+    name: "keyforge-hello-world",
+    version: "0.1.0",
+    installer_kind: "compose",
+    bundle: {
+      url: "https://example.invalid/bundle.tar.gz",
+      sha256: randomHex32(),
+      compose_file: "docker-compose.yml"
+    },
+    env_template: [
+      { name: "EXAMPLE_VAR", required: false, description: "not a real secret, just an example" }
+    ],
+    verify: { script: "verify.sh", timeout_secs: 60 },
+    issued_at: now,
+    expires_at: now + 60 * 60 * 24 * 365
+  };
+  $('#sign-input').value = JSON.stringify(tpl, null, 2);
+}
+
+async function main() {
+  const [ctAgentInit, manifestCoreInit] = await Promise.all([
+    initCtAgent(),
+    initManifestCore(),
+  ]);
+
+  newTemplate();
+  $('#new-template').addEventListener('click', newTemplate);
+
+  // --- Step 1: identity ---
+  $('#gen-identity').addEventListener('click', () => {
+    const h = generate_holder_identity();
+    identity = { public_hex: h.public_hex, private_hex: h.private_hex };
+    $('#pubkey-val').textContent = identity.public_hex;
+    $('#privkey-val').textContent = identity.private_hex;
+    $('#identity-fields').style.display = '';
+    $('#identity-status').textContent = 'generated locally, just now';
+  });
+
+  document.querySelectorAll('.copy-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = document.querySelector(btn.dataset.copy);
+      navigator.clipboard?.writeText(target.textContent).then(() => {
+        const old = btn.textContent;
+        btn.textContent = 'copied';
+        setTimeout(() => (btn.textContent = old), 1200);
+      });
+    });
+  });
+
+  // --- Step 2: verify a real manifest ---
+  const REGISTRY = 'https://registry.bunsenbrenner.org';
+  // A real manifest fetched live from the registry at build/write time, used as an offline
+  // fallback if the browser's own cross-origin fetch is blocked (the registry does not currently
+  // send Access-Control-Allow-Origin, so a direct browser fetch from a different origin than
+  // registry.bunsenbrenner.org itself will typically fail with a CORS error -- this is a real,
+  // observed constraint, not a hypothetical one; see the README).
+  // Fetched live on 2026-08-30 via: curl https://registry.bunsenbrenner.org/manifests/56cba853f4aaa1eb9dcd2914ddcc05d04d02fe5d9c18b9e68bd6d275990f6c1e
+  const FALLBACK_MANIFEST = {"publisher_pubkey": "1292c0cc8da75808549be709101acec612a52d5219b188c0adcff6d829ace69b", "manifest_id": "56cba853f4aaa1eb9dcd2914ddcc05d04d02fe5d9c18b9e68bd6d275990f6c1e", "name": "travel", "version": "0.1.1", "installer_kind": "compose", "bundle": {"url": "bundle.tar.gz", "sha256": "1876fa51f43878a6e075db508731699c901781e4a374602d88c31626b45b97e3", "compose_file": "compose.yml"}, "env_template": [{"name": "LITELLM_BASE_URL", "required": true, "description": "LiteLLM-compatible base URL (e.g. https-//your-litellm-proxy/v1) used for the chat-formatting step - the anti-hallucination check needs a real model call, this demo has no offline fallback for it"}, {"name": "LITELLM_API_KEY", "required": true, "description": "API key for LITELLM_BASE_URL - never share this value outside your own local .env"}, {"name": "LITELLM_DEFAULT_MODEL", "required": false, "description": "Model name to request from LITELLM_BASE_URL, defaults to local-devstral-small2 if unset"}], "verify": {"script": "verify.sh", "timeout_secs": 120}, "issued_at": 1788034613, "expires_at": 1819570613, "demo_prompt": {"system": "Du übersetzt einen Nutzerwunsch in eine JSON-Konfiguration für diese Demo. Ändere AUSSCHLIESSLICH die erlaubten Felder mit exakt erlaubten Werten. Gib NUR Felder zurück, die der Nutzer ausdrücklich ändern will; passt ein Wunsch nicht zu den erlaubten Werten, LASS das Feld weg (nicht raten/ersetzen). Antworte NUR mit striktem JSON.", "parameters": [{"name": "preference", "type": "enum", "options": ["fastest", "avoid_highways", "avoid_tolls", "shortest_distance", "fastest_alternative"]}], "examples": ["Autobahnen meiden", "kürzeste Strecke", "mautfrei"]}, "signature": "f1f5cc0c176e86b82e8d9c5a2588651b5074fe4acca299233133f46b7f950df775f0fb9dff0228f5e99331fc21d18b2de48215e79ddbec6a8c5da4267a8aa702"};
+
+  $('#verify-input').value = JSON.stringify(FALLBACK_MANIFEST, null, 2);
+
+  async function loadManifestList() {
+    const picker = $('#manifest-picker');
+    const note = $('#registry-note');
+    note.style.display = 'none';
+    try {
+      const res = await fetch(`${REGISTRY}/manifests`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const list = await res.json();
+      picker.innerHTML = '';
+      for (const m of list) {
+        const opt = document.createElement('option');
+        opt.value = m.manifest_id;
+        opt.textContent = `${m.name} @ ${m.version}`;
+        picker.appendChild(opt);
+      }
+      picker.style.display = '';
+      if (list.length) await loadManifestDetail(list[0].manifest_id);
+    } catch (err) {
+      note.style.display = '';
+      note.innerHTML = `Live fetch from <code>${REGISTRY}/manifests</code> failed in this browser ` +
+        `(${err.message || err} — most likely CORS, since the registry doesn't send an ` +
+        `Access-Control-Allow-Origin header for cross-origin requests). Showing a real manifest ` +
+        `fetched live from the registry via curl instead, as a fallback example — verification below ` +
+        `is still checking a genuine, live-registry-issued signature, just not fetched by this page's ` +
+        `own JS. You can also paste any manifest JSON directly.`;
+      $('#verify-input').value = JSON.stringify(FALLBACK_MANIFEST, null, 2);
+    }
+  }
+
+  async function loadManifestDetail(id) {
+    try {
+      const res = await fetch(`${REGISTRY}/manifests/${id}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const manifest = await res.json();
+      $('#verify-input').value = JSON.stringify(manifest, null, 2);
+    } catch (err) {
+      $('#verify-input').value = JSON.stringify(FALLBACK_MANIFEST, null, 2);
+    }
+  }
+
+  $('#fetch-registry').addEventListener('click', loadManifestList);
+  $('#manifest-picker').addEventListener('change', (e) => loadManifestDetail(e.target.value));
+
+  function runVerify(json, statusEl) {
+    let sigOk, validOk;
+    try {
+      sigOk = verifyManifest(json);
+    } catch (err) {
+      setStatus(statusEl, 'bad', `Malformed manifest JSON: ${err.message || err}`);
+      return;
+    }
+    try {
+      validOk = isManifestValid(json, BigInt(Math.floor(Date.now() / 1000)));
+    } catch (err) {
+      validOk = null;
+    }
+    if (sigOk) {
+      const validText = validOk === null ? '' : (validOk ? ' and is currently within its validity window' : ' but has EXPIRED');
+      setStatus(statusEl, sigOk && validOk !== false ? 'ok' : 'bad',
+        `Signature verifies (authentic, unmodified since signing)${validText}.`);
+    } else {
+      setStatus(statusEl, 'bad', 'Signature does NOT verify — tampered, wrong key, or malformed.');
+    }
+  }
+
+  $('#verify-manifest').addEventListener('click', () => {
+    runVerify($('#verify-input').value, $('#verify-status'));
+  });
+
+  // --- Step 3: sign your own manifest ---
+  $('#sign-manifest').addEventListener('click', () => {
+    if (!identity) {
+      setStatus($('#sign-status'), 'bad', 'Generate an identity in Step 1 first.');
+      return;
+    }
+    try {
+      const signed = signManifest(identity.private_hex, $('#sign-input').value);
+      $('#signed-json').textContent = signed;
+      $('#signed-output').style.display = '';
+      setStatus($('#sign-status'), 'ok', 'Signed locally with your holder identity.');
+    } catch (err) {
+      setStatus($('#sign-status'), 'bad', `Could not sign: ${err.message || err}`);
+    }
+  });
+
+  $('#verify-signed').addEventListener('click', () => {
+    runVerify($('#signed-json').textContent, $('#signed-verify-status'));
+  });
+
+  // --- Bonus: raw holder sign/verify ---
+  let lastSig = null;
+  const enc = new TextEncoder();
+
+  $('#raw-sign').addEventListener('click', () => {
+    if (!identity) {
+      $('#raw-verify-status').innerHTML = '';
+      setStatus($('#raw-verify-status'), 'bad', 'Generate an identity in Step 1 first.');
+      return;
+    }
+    const msg = enc.encode($('#raw-message').value);
+    lastSig = holderSign(identity.private_hex, msg);
+    $('#raw-sig-val').textContent = hex(lastSig);
+  });
+
+  $('#raw-verify').addEventListener('click', () => {
+    if (!identity || !lastSig) {
+      setStatus($('#raw-verify-status'), 'bad', 'Sign a message first.');
+      return;
+    }
+    const msg = enc.encode($('#raw-message').value);
+    const ok = holderVerify(identity.public_hex, msg, lastSig);
+    setStatus($('#raw-verify-status'), ok ? 'ok' : 'bad',
+      ok ? 'holderVerify: signature valid for this message.' : 'holderVerify: does NOT verify (message changed since signing?).');
+  });
+}
+
+main().catch((err) => {
+  document.body.insertAdjacentHTML('afterbegin',
+    `<div style="background:#e0716b;color:#1a0606;padding:1em;font-family:monospace">
+       Failed to load wasm modules: ${err.message || err}. Did you run ./build-wasm.sh first?
+     </div>`);
+  console.error(err);
+});
+</script>
+</body>
+</html>
