@@ -15,11 +15,14 @@
 # 2. manifest-core-wasm (crate manifest-core-wasm, scimbe/CADS-agent-marketplace,
 #    crates/manifest-core-wasm): wasm-bindgen bindings over manifest-core's OWN
 #    ServiceManifest::sign_new/is_valid/signing_bytes -- this demo's other groundwork PR
-#    (scimbe/CADS-agent-marketplace#45, not yet merged, and itself based on the also-open
-#    #43 "signed demo_prompt block" -- the live registry at registry.bunsenbrenner.org
-#    already runs #43's schema, confirmed by fetching a real manifest and finding it didn't
-#    verify against `main`'s manifest-core until demo_prompt was accounted for; see this
-#    demo's README for the full story). Pinned by commit SHA on top of #43's tip.
+#    (scimbe/CADS-agent-marketplace#45, plus the also-merged #43 "signed demo_prompt
+#    block" it was based on -- the live registry at registry.bunsenbrenner.org already
+#    ran #43's schema before #43 landed, confirmed by fetching a real manifest and
+#    finding it didn't verify against `main`'s manifest-core until demo_prompt was
+#    accounted for; see this demo's README for the full story). Both PRs have since
+#    merged to `main` (#45 via a fresh PR#46 after #45 was auto-closed when its stacked
+#    base branch was deleted -- same code, new merge commit). Pinned to `main`'s tip,
+#    refreshed at build time via `git ls-remote` rather than hardcoded.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,10 +31,16 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # holderSign. Bump once merged to main and a later commit is desired.
 CT_AGENT_REF="${CT_AGENT_REF:-f05b52ce6419c22997d10b345d7716b904245537}"
 
-# scimbe/CADS-agent-marketplace#45 (feat/manifest-core-wasm-bindings, based on #43
-# feat/manifest-core-demo-prompt): adds the manifest-core-wasm crate. Bump once #43+#45
-# are merged to main.
-MARKETPLACE_REF="${MARKETPLACE_REF:-cbf16872ee1209c2fefe93d39e23c49af133dde0}"
+# scimbe/CADS-agent-marketplace: manifest-core-wasm (from #45, based on #43's
+# demo_prompt work) merged to main via PR#46 (a fresh PR after #45 was auto-closed when
+# its stacked base branch was deleted -- same code, new merge commit). Resolved fresh
+# from origin/main at build time rather than hardcoded, so this never silently drifts
+# behind main; override with MARKETPLACE_REF to pin a specific commit instead.
+MARKETPLACE_REF="${MARKETPLACE_REF:-$(git ls-remote https://github.com/scimbe/CADS-agent-marketplace refs/heads/main | cut -f1)}"
+if [ -z "$MARKETPLACE_REF" ]; then
+  echo "error: could not resolve scimbe/CADS-agent-marketplace's main HEAD via git ls-remote" >&2
+  exit 1
+fi
 
 OUT_DIR="$REPO_ROOT/pkg"
 mkdir -p "$OUT_DIR"

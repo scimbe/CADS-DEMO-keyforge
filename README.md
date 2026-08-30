@@ -15,7 +15,7 @@ Part of the [bunsenbrenner.org](https://bunsenbrenner.org) CADS zero-trust tunne
 | `generate_holder_identity()`, `holderSign()` | **Production-proven.** Existing `ct-agent-wasm` exports (crate `ct-agent-wasm`, [scimbe/ct-agent](https://github.com/scimbe/ct-agent), `wasm/`), already CI-built and used by other demos (e.g. `CADS-webconference-demo`). |
 | `holderVerify()` | **New**, added as groundwork for this demo: [scimbe/ct-agent#124](https://github.com/scimbe/ct-agent/pull/124) (branch `feat/keyforge-holder-verify`). Mirrors `holderSign`'s existing pattern exactly (`ed25519_dalek::VerifyingKey::verify`); 5 new unit tests (sign→verify round trip, tampered message, tampered signature, wrong key, malformed input). Not yet merged — this demo pins the PR's commit SHA. |
 | `ServiceManifest::sign_new/is_valid/signing_bytes` | **Production-proven.** Existing `manifest-core` crate ([scimbe/CADS-agent-marketplace](https://github.com/scimbe/CADS-agent-marketplace), `crates/manifest-core`) — the real signed-manifest schema the live registry uses. |
-| `manifest-core-wasm` (the crate exposing the above to JS) | **New**, added as groundwork for this demo: [scimbe/CADS-agent-marketplace#45](https://github.com/scimbe/CADS-agent-marketplace/pull/45) (branch `feat/manifest-core-wasm-bindings`). Calls `manifest-core`'s own `sign_new`/`is_valid`/`signing_bytes` directly — the domain-separated, length-prefixed preimage-construction logic is never reimplemented in JS. Not yet merged — this demo pins the PR's commit SHA. |
+| `manifest-core-wasm` (the crate exposing the above to JS) | **New**, added as groundwork for this demo: [scimbe/CADS-agent-marketplace#45](https://github.com/scimbe/CADS-agent-marketplace/pull/45) (branch `feat/manifest-core-wasm-bindings`). Calls `manifest-core`'s own `sign_new`/`is_valid`/`signing_bytes` directly — the domain-separated, length-prefixed preimage-construction logic is never reimplemented in JS. **Merged to `main`** (2026-08-30, via a fresh PR [#46](https://github.com/scimbe/CADS-agent-marketplace/pull/46) after #45 was auto-closed when its stacked base branch was deleted — same code, new merge commit); this demo now builds `manifest-core-wasm` against `main`'s tip, resolved fresh at build time rather than pinned to a PR-branch SHA. |
 
 ## A real blocker hit and fixed along the way
 
@@ -23,20 +23,17 @@ While building this, `verifyManifest` returned `false` against a manifest fetche
 `https://registry.bunsenbrenner.org/manifests/<id>` — a genuine, deployed, correctly-signed
 manifest. Root cause: the live registry serves manifests carrying a `demo_prompt` field
 (guided natural-language configuration), and that field turned out to be part of the *signed*
-preimage in an **already-open but unmerged** PR
+preimage in what was at the time an open, unmerged PR
 ([scimbe/CADS-agent-marketplace#43](https://github.com/scimbe/CADS-agent-marketplace/pull/43),
-`feat/manifest-core-demo-prompt`) — the deployed registry runs that branch's schema, not `main`'s.
-`main`'s `ServiceManifest::signing_bytes` doesn't know about `demo_prompt` at all, so it recomputed
-a *different* preimage than what the registry actually signed, and verification failed.
+`feat/manifest-core-demo-prompt`) — the deployed registry ran that branch's schema, not `main`'s.
+`main`'s `ServiceManifest::signing_bytes` didn't know about `demo_prompt` at all at the time, so it
+recomputed a *different* preimage than what the registry actually signed, and verification failed.
 
 Fixed by rebasing PR #45 onto PR #43's tip and wiring `demo_prompt` through
 `signManifest`/`verifyManifest`/`isManifestValid`. Re-running the same manifest that failed
 before the rebase now verifies correctly — see `examples/verify_real_manifest.rs` in PR #45,
-kept as a regression check.
-
-**Practical implication for anyone building against this registry:** if you're implementing
-against `manifest-core`'s `main` branch today, your signature verification will not match what
-`registry.bunsenbrenner.org` actually serves. PR #43 needs to land on `main` for that to line up.
+kept as a regression check. **Both #43 and #45 have since merged to `main`** (2026-08-30), so
+`main`'s `signing_bytes` now accounts for `demo_prompt` and lines up with what the registry serves.
 
 ## What you can do on this page
 
@@ -69,14 +66,18 @@ always works regardless of CORS.
 
 Hermetic (runs in a throwaway `rust:1-slim` container via Docker), mirroring
 `CADS-webconference-demo`'s own `build-wasm.sh` convention. Clones `ct-agent` and
-`CADS-agent-marketplace` at pinned commit SHAs (see the script — both currently point at this
-demo's own unmerged groundwork PR branches, since neither PR has landed on `main` yet), builds
-`ct-agent-wasm` and `manifest-core-wasm` for `wasm32-unknown-unknown --release`, and runs
-`wasm-bindgen --target web` into `./pkg/ct-agent-wasm/` and `./pkg/manifest-core-wasm/` — both
-gitignored generated output, not source, same as `CADS-webconference-demo`'s `/pkg/`.
+`CADS-agent-marketplace`, builds `ct-agent-wasm` and `manifest-core-wasm` for
+`wasm32-unknown-unknown --release`, and runs `wasm-bindgen --target web` into
+`./pkg/ct-agent-wasm/` and `./pkg/manifest-core-wasm/` — both gitignored generated output, not
+source, same as `CADS-webconference-demo`'s `/pkg/`.
 
-Bump the pinned SHAs once PR #124 (ct-agent) and PR #45/#43 (CADS-agent-marketplace) merge to
-`main`.
+- **`ct-agent`** is still pinned to this demo's own unmerged groundwork PR branch,
+  [scimbe/ct-agent#124](https://github.com/scimbe/ct-agent/pull/124) (commit SHA in the script),
+  since that PR hasn't landed on `main` yet. Bump once it merges.
+- **`CADS-agent-marketplace`** now builds against `main`'s tip (PR #45/#43 both merged
+  2026-08-30) — the script resolves `origin/main`'s current HEAD fresh via `git ls-remote` at
+  build time rather than pinning a fixed SHA, so it never silently drifts behind `main`. Set
+  `MARKETPLACE_REF` to pin a specific commit instead if you need a reproducible build.
 
 ## Running it
 
