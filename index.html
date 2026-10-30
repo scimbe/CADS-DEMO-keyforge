@@ -213,7 +213,8 @@
           Fetches a live, publisher-signed manifest from
           <code>registry.bunsenbrenner.org</code> and checks its ed25519 signature — entirely client-side,
           via <code>manifest-core-wasm</code> calling <code>ServiceManifest::is_valid</code> directly (no
-          preimage logic reimplemented in JS).
+          preimage logic reimplemented in JS). A valid signature only binds the manifest to the key it
+          names, so the page also says whether the live registry lists that key.
         </p>
       </div>
     </details>
@@ -347,8 +348,80 @@ function randomHex32() {
   return hex(b);
 }
 function setStatus(el, kind, text) {
-  el.innerHTML = `<div class="status ${kind}">${text}</div>`;
+  // textContent, never innerHTML: parser errors echo parts of the pasted JSON back, and this
+  // page holds a private key -- pasted content must not be able to run as markup.
+  const box = document.createElement('div');
+  box.className = `status ${kind}`;
+  box.textContent = text;
+  el.replaceChildren(box);
 }
+
+// VERDICT-START (pure logic, exercised directly by tests/verdict.test.mjs)
+// A signature only proves "the holder of publisher_pubkey signed these fields". The key travels
+// inside the manifest, so anyone can re-sign a modified copy with their own key. Fields the schema
+// does not know are not part of the signed preimage at all.
+const SIGNED_FIELDS = {
+  '': ['publisher_pubkey', 'manifest_id', 'name', 'version', 'installer_kind', 'bundle',
+    'env_template', 'verify', 'issued_at', 'expires_at', 'demo_prompt', 'environment', 'wasm',
+    'signature'],
+  bundle: ['url', 'sha256', 'compose_file'],
+  verify: ['script', 'timeout_secs'],
+  env_template: ['name', 'required', 'description'],
+};
+
+function unsignedFields(manifest) {
+  const out = [];
+  const check = (obj, path) => {
+    if (obj === null || typeof obj !== 'object') return;
+    for (const k of Object.keys(obj)) {
+      if (!SIGNED_FIELDS[path].includes(k)) out.push(path ? `${path}.${k}` : k);
+    }
+  };
+  check(manifest, '');
+  check(manifest.bundle, 'bundle');
+  check(manifest.verify, 'verify');
+  for (const e of Array.isArray(manifest.env_template) ? manifest.env_template : []) check(e, 'env_template');
+  return [...new Set(out)];
+}
+
+function shortKey(k) {
+  return typeof k === 'string' && k.length > 16 ? `${k.slice(0, 8)}…${k.slice(-8)}` : String(k);
+}
+
+/**
+ * The verdict shown to the user. trustedKeys: publisher keys the live registry lists (null if the
+ * registry could not be asked). ownKey: this tab's holder key, if any.
+ */
+function manifestVerdict({ sigOk, validOk, manifest, trustedKeys, ownKey }) {
+  if (!sigOk) return { kind: 'bad', text: 'Signature does NOT verify — tampered, wrong key, or malformed.' };
+  const key = manifest.publisher_pubkey;
+  const extras = unsignedFields(manifest);
+  const parts = [`Signature is valid for key ${shortKey(key)}`];
+  let kind = 'ok';
+  if (key === ownKey) {
+    parts.push('that is your own key from Step 1');
+  } else if (trustedKeys && trustedKeys.has(key)) {
+    parts.push('a publisher key listed by the live registry');
+  } else if (trustedKeys) {
+    parts.push('NOT a publisher key listed by the live registry, so this says nothing about who made it');
+    kind = 'bad';
+  } else {
+    parts.push('publisher not checked (registry not fetched yet), so this says nothing about who made it');
+    kind = 'bad';
+  }
+  if (validOk === false) {
+    parts.push('EXPIRED');
+    kind = 'bad';
+  } else if (validOk === true) {
+    parts.push('within its validity window');
+  }
+  if (extras.length) {
+    parts.push(`contains fields NOT covered by the signature: ${extras.join(', ')}`);
+    kind = 'bad';
+  }
+  return { kind, text: `${parts.join(' — ')}.` };
+}
+// VERDICT-END
 
 let identity = null; // { public_hex, private_hex }
 
@@ -406,24 +479,26 @@ async function main() {
 
   // --- Step 2: verify a real manifest ---
   const REGISTRY = 'https://registry.bunsenbrenner.org';
-  // A real manifest fetched live from the registry at build/write time, used as an offline
-  // fallback if the browser's own cross-origin fetch is blocked (the registry does not currently
-  // send Access-Control-Allow-Origin, so a direct browser fetch from a different origin than
-  // registry.bunsenbrenner.org itself will typically fail with a CORS error -- this is a real,
-  // observed constraint, not a hypothetical one; see the README).
+  // A stored copy of a real manifest, only as the labelled prefill before the first live fetch.
   // Fetched live on 2026-08-30 via: curl https://registry.bunsenbrenner.org/manifests/56cba853f4aaa1eb9dcd2914ddcc05d04d02fe5d9c18b9e68bd6d275990f6c1e
   const FALLBACK_MANIFEST = {"publisher_pubkey": "1292c0cc8da75808549be709101acec612a52d5219b188c0adcff6d829ace69b", "manifest_id": "56cba853f4aaa1eb9dcd2914ddcc05d04d02fe5d9c18b9e68bd6d275990f6c1e", "name": "travel", "version": "0.1.1", "installer_kind": "compose", "bundle": {"url": "bundle.tar.gz", "sha256": "1876fa51f43878a6e075db508731699c901781e4a374602d88c31626b45b97e3", "compose_file": "compose.yml"}, "env_template": [{"name": "LITELLM_BASE_URL", "required": true, "description": "LiteLLM-compatible base URL (e.g. https-//your-litellm-proxy/v1) used for the chat-formatting step - the anti-hallucination check needs a real model call, this demo has no offline fallback for it"}, {"name": "LITELLM_API_KEY", "required": true, "description": "API key for LITELLM_BASE_URL - never share this value outside your own local .env"}, {"name": "LITELLM_DEFAULT_MODEL", "required": false, "description": "Model name to request from LITELLM_BASE_URL, defaults to local-devstral-small2 if unset"}], "verify": {"script": "verify.sh", "timeout_secs": 120}, "issued_at": 1788034613, "expires_at": 1819570613, "demo_prompt": {"system": "Du übersetzt einen Nutzerwunsch in eine JSON-Konfiguration für diese Demo. Ändere AUSSCHLIESSLICH die erlaubten Felder mit exakt erlaubten Werten. Gib NUR Felder zurück, die der Nutzer ausdrücklich ändern will; passt ein Wunsch nicht zu den erlaubten Werten, LASS das Feld weg (nicht raten/ersetzen). Antworte NUR mit striktem JSON.", "parameters": [{"name": "preference", "type": "enum", "options": ["fastest", "avoid_highways", "avoid_tolls", "shortest_distance", "fastest_alternative"]}], "examples": ["Autobahnen meiden", "kürzeste Strecke", "mautfrei"]}, "signature": "f1f5cc0c176e86b82e8d9c5a2588651b5074fe4acca299233133f46b7f950df775f0fb9dff0228f5e99331fc21d18b2de48215e79ddbec6a8c5da4267a8aa702"};
 
   $('#verify-input').value = JSON.stringify(FALLBACK_MANIFEST, null, 2);
+  const note = $('#registry-note');
+  const showNote = (text) => { note.style.display = ''; note.textContent = text; };
+  showNote('Prefilled: a stored copy of a real manifest from 2026-08-30. "Fetch live from registry" loads the current ones.');
+
+  // Publisher keys the live registry lists; null until it has answered.
+  let trustedKeys = null;
 
   async function loadManifestList() {
     const picker = $('#manifest-picker');
-    const note = $('#registry-note');
     note.style.display = 'none';
     try {
       const res = await fetch(`${REGISTRY}/manifests`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const list = await res.json();
+      trustedKeys = new Set(list.map((m) => m.publisher_pubkey));
       picker.innerHTML = '';
       for (const m of list) {
         const opt = document.createElement('option');
@@ -434,14 +509,8 @@ async function main() {
       picker.style.display = '';
       if (list.length) await loadManifestDetail(list[0].manifest_id);
     } catch (err) {
-      note.style.display = '';
-      note.innerHTML = `Live fetch from <code>${REGISTRY}/manifests</code> failed in this browser ` +
-        `(${err.message || err} — most likely CORS, since the registry doesn't send an ` +
-        `Access-Control-Allow-Origin header for cross-origin requests). Showing a real manifest ` +
-        `fetched live from the registry via curl instead, as a fallback example — verification below ` +
-        `is still checking a genuine, live-registry-issued signature, just not fetched by this page's ` +
-        `own JS. You can also paste any manifest JSON directly.`;
-      $('#verify-input').value = JSON.stringify(FALLBACK_MANIFEST, null, 2);
+      showNote(`Live fetch from ${REGISTRY}/manifests failed (${err.message || err}). ` +
+        'The text box is unchanged and was NOT loaded from the registry just now.');
     }
   }
 
@@ -450,9 +519,14 @@ async function main() {
       const res = await fetch(`${REGISTRY}/manifests/${id}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const manifest = await res.json();
+      note.style.display = 'none';
       $('#verify-input').value = JSON.stringify(manifest, null, 2);
+      $('#verify-status').replaceChildren();
     } catch (err) {
-      $('#verify-input').value = JSON.stringify(FALLBACK_MANIFEST, null, 2);
+      // Never swap in a different manifest here: the user picked this one.
+      $('#verify-input').value = '';
+      $('#verify-status').replaceChildren();
+      showNote(`Could not load this manifest from the registry (${err.message || err}).`);
     }
   }
 
@@ -472,13 +546,10 @@ async function main() {
     } catch (err) {
       validOk = null;
     }
-    if (sigOk) {
-      const validText = validOk === null ? '' : (validOk ? ' and is currently within its validity window' : ' but has EXPIRED');
-      setStatus(statusEl, sigOk && validOk !== false ? 'ok' : 'bad',
-        `Signature verifies (authentic, unmodified since signing)${validText}.`);
-    } else {
-      setStatus(statusEl, 'bad', 'Signature does NOT verify — tampered, wrong key, or malformed.');
-    }
+    const { kind, text } = manifestVerdict({
+      sigOk, validOk, manifest: JSON.parse(json), trustedKeys, ownKey: identity?.public_hex,
+    });
+    setStatus(statusEl, kind, text);
   }
 
   $('#verify-manifest').addEventListener('click', () => {
